@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 import instapush
 import requests
 import re
+import urllib
 
 user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36"
 
@@ -34,7 +35,7 @@ def login(simple):
     login_content = login_page.content
     login_session_cookie = re.search(r"_simple_session=([a-z0-9]+);", login_page.headers['Set-Cookie']).group(1)
 
-    csrf = BeautifulSoup(login_content, 'html.parser').find_all('input')[-1]['value']
+    csrf = BeautifulSoup(login_content, 'html.parser').find('input', {"name": "_csrf"})['value']
 
     response = requests.post(
         "https://bank.simple.com/signin",
@@ -56,25 +57,33 @@ def login(simple):
     return login_session_cookie
 
 
-def transact(simple, session, dollars):
+def transact(simple, session_cookie, dollars):
     goals_page = requests.get("https://bank.simple.com/goals", headers = {
-        "Cookie": "_simple_session={}".format(session),
+        "Cookie": session_cookie,
         "User-Agent": user_agent
     })
 
-    csrf = BeautifulSoup(goals_page.content, 'html.parser').find_all('input')[-1]['value']
+    xhr_csrf = BeautifulSoup(goals_page.content, 'html.parser').find('meta', {"name":"_csrf"})['content']
 
     response = requests.post(
-        "https://bank.simple.com/goals/{}/transactions".format(simple.goal),
+        url="https://bank.simple.com/goals/{}/transactions".format(simple.goal),
+        headers = {
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": "https://bank.simple.com",
+            "Content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36",
+            "Cache-Control": "no-cache",
+            "Cookie": "_simple_session={}".format(session_cookie),
+            "Host": "bank.simple.com",
+            "Referer": "https://bank.simple.com/goals",
+            "DNT": "1",
+            "Pragma": "no-cache",
+            "Accept-Language": "en-US,en;q=0.8",
+            "Accept": "text/javascript, text/html, application/xml, text/xml, */*",
+        },
         data = {
             "amount": int(dollars * 10000),
-            "_csrf": csrf
-        },
-        headers = {
-            "User-Agent": user_agent,
-            "Content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "Cookie": "_simple_session={}".format(session),
-            "X-Requested-With": "XMLHttpRequest"
+            "_csrf": xhr_csrf,
         }
     )
 
