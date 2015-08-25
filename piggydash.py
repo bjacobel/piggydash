@@ -9,7 +9,6 @@ import requests
 import re
 import urllib
 
-user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36"
 
 def parse_yaml():
     settings = None
@@ -23,21 +22,21 @@ def parse_yaml():
     if (
         not settings.simple.username or
         not settings.simple.password or
-        not settings.simple.goal
+        not settings.simple.goal or
+        not settings.transfer_amount
     ):
-        raise Exception("Missing required secret keys, check secrets.example.yml for instructions")
+        raise Exception("Missing required secret keys/config, check secrets.example.yml for instructions")
     else:
         return settings
 
 
-def login(simple):
-    login_page = requests.get("https://bank.simple.com/signin")
+def login(simple, session):
+    login_page = session.get("https://bank.simple.com/signin")
     login_content = login_page.content
-    login_session_cookie = re.search(r"_simple_session=([a-z0-9]+);", login_page.headers['Set-Cookie']).group(1)
 
     csrf = BeautifulSoup(login_content, 'html.parser').find('input', {"name": "_csrf"})['value']
 
-    response = requests.post(
+    response = session.post(
         "https://bank.simple.com/signin",
         data = {
             "username": simple.username,
@@ -46,40 +45,23 @@ def login(simple):
         },
         headers = {
             "Content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "User-Agent": user_agent,
-            "Cookie": "_simple_session={}".format(login_session_cookie),
         }
     )
 
     if not response.ok:
         raise Exception("Something happened with Simple authentication.")
 
-    return login_session_cookie
 
-
-def transact(simple, session_cookie, dollars):
-    goals_page = requests.get("https://bank.simple.com/goals", headers = {
-        "Cookie": session_cookie,
-        "User-Agent": user_agent
-    })
+def transact(simple, session, dollars):
+    goals_page = session.get("https://bank.simple.com/goals")
 
     xhr_csrf = BeautifulSoup(goals_page.content, 'html.parser').find('meta', {"name":"_csrf"})['content']
 
-    response = requests.post(
-        url="https://bank.simple.com/goals/{}/transactions".format(simple.goal),
+    response = session.post(
+        url = "https://bank.simple.com/goals/{}/transactions".format(simple.goal),
         headers = {
             "X-Requested-With": "XMLHttpRequest",
-            "Origin": "https://bank.simple.com",
             "Content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36",
-            "Cache-Control": "no-cache",
-            "Cookie": "_simple_session={}".format(session_cookie),
-            "Host": "bank.simple.com",
-            "Referer": "https://bank.simple.com/goals",
-            "DNT": "1",
-            "Pragma": "no-cache",
-            "Accept-Language": "en-US,en;q=0.8",
-            "Accept": "text/javascript, text/html, application/xml, text/xml, */*",
         },
         data = {
             "amount": int(dollars * 10000),
@@ -87,12 +69,15 @@ def transact(simple, session_cookie, dollars):
         }
     )
 
-    import ipdb; ipdb.set_trace()
+    return response.ok
 
 
-def push_notify(instapush, amount, goal):
+def push_notify(settings, amount, goal):
     # Requires creating an app in Instapush and putting its credentials in secrets.yml
-    app = instapush.App(appid=instapush.id, secret=instapush.secret)
+    app = instapush.App(
+        appid = settings.id,
+        secret = settings.secret
+    )
 
     events = app.list_event()
 
@@ -113,12 +98,18 @@ def push_notify(instapush, amount, goal):
 def main():
     settings = parse_yaml()
 
-    session_cookie = login(settings.simple)
-    transact(settings.simple, session_cookie, 0.01)
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36")
+    })
+
+    login(settings.simple, session)
+    success = transact(settings.simple, session, settings.transfer_amount)
 
     # Instapush notification is optional -- don't do this if the credentials are not present
-    # if settings.instapush.id and settings.instapush.secret:
-    #     push_notify(settings.instapush, amount, goal)
+    if settings.instapush.id and settings.instapush.secret and success:
+        push_notify(settings.instapush, settings.transfer_amount, settings.simple.goal)
 
 
 if __name__ == "__main__":
