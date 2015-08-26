@@ -22,8 +22,8 @@ def parse_yaml():
     if (
         not settings.simple.username or
         not settings.simple.password or
-        not settings.simple.goal or
-        not settings.transfer_amount
+        not settings.simple.goal_name or
+        not settings.simple.transfer_amount
     ):
         raise Exception("Missing required secret keys/config, check secrets.example.yml for instructions")
     else:
@@ -52,20 +52,38 @@ def login(simple, session):
         raise Exception("Something happened with Simple authentication.")
 
 
-def transact(simple, session, dollars):
+def get_csrf(session):
     goals_page = session.get("https://bank.simple.com/goals")
 
-    xhr_csrf = BeautifulSoup(goals_page.content, 'html.parser').find('meta', {"name":"_csrf"})['content']
+    return BeautifulSoup(goals_page.content, 'html.parser').find('meta', {"name":"_csrf"})['content']
 
+
+def goal_lookup(session, csrf, goal_name):
+    response = session.get(
+        url = "https://bank.simple.com/goals/data",
+        headers = {
+            "X-Request": "JSON",
+            "X-CSRF-Token": csrf
+        }
+    )
+
+    for goal in response.json():
+        if goal['name'] == goal_name and not goal['archived']:
+            return goal['id']
+
+    raise Exception("No goal matching specified name found")
+
+
+def transact(session, csrf, dollars, goal_id):
     response = session.post(
-        url = "https://bank.simple.com/goals/{}/transactions".format(simple.goal),
+        url = "https://bank.simple.com/goals/{}/transactions".format(goal_id),
         headers = {
             "X-Requested-With": "XMLHttpRequest",
             "Content-type": "application/x-www-form-urlencoded; charset=UTF-8",
         },
         data = {
             "amount": int(dollars * 10000),
-            "_csrf": xhr_csrf,
+            "_csrf": csrf,
         }
     )
 
@@ -105,11 +123,13 @@ def main():
     })
 
     login(settings.simple, session)
-    success = transact(settings.simple, session, settings.transfer_amount)
+    csrf = get_csrf(session)
+    goal_id = goal_lookup(session, csrf, settings.simple.goal_name)
+    success = transact(session, csrf, settings.simple.transfer_amount, goal_id)
 
     # Instapush notification is optional -- don't do this if the credentials are not present
     if settings.instapush.id and settings.instapush.secret and success:
-        push_notify(settings.instapush, settings.transfer_amount, settings.simple.goal)
+        push_notify(settings.instapush, settings.simple.transfer_amount, settings.simple.goal_name)
 
 
 if __name__ == "__main__":
