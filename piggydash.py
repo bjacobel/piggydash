@@ -3,7 +3,6 @@
 from yaml import load
 from os import path
 from addict import Dict
-import requests
 import simple
 import notifications
 
@@ -30,16 +29,12 @@ def parse_yaml():
 def main():
     settings = parse_yaml()
 
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36")
-    })
+    sp = simple.Simple(settings.simple)
 
-    simple.login(settings.simple, session)
-    csrf = simple.get_csrf(session)
-    goal_id = simple.goal_lookup(session, csrf, settings.simple.goal_name)
-    success = simple.transact(session, csrf, settings.simple.transfer_amount, goal_id)
+    sp.login()
+    sp.goal_lookup()
+
+    success = sp.transact()
 
     # Instapush notification is optional -- don't do this if the credentials are not present
     if settings.instapush.id and settings.instapush.secret and success:
