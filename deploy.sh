@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -e
-
 dir="$(pwd)"
 
 zip -ru piggydash.zip ./*.py secrets.yml

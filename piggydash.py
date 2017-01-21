@@ -26,7 +26,7 @@ def parse_yaml():
         return settings
 
 
-def main():
+def main(event=None, context=None):
     settings = parse_yaml()
 
     sp = simple.Simple(settings.simple)
