@@ -36,9 +36,9 @@ def main():
 
     success = sp.transact()
 
-    # Instapush notification is optional -- don't do this if the credentials are not present
-    if settings.instapush.id and settings.instapush.secret and success:
-        notifications.push_notify(settings.instapush, settings.simple.transfer_amount, settings.simple.goal_name)
+    # IFTTT maker notification is optional -- don't do this if the credentials are not present
+    if settings.ifttt.key and success:
+        notifications.push_notify(settings.ifttt.key, settings.simple.transfer_amount, settings.simple.goal_name)
 
 
 if __name__ == "__main__":
